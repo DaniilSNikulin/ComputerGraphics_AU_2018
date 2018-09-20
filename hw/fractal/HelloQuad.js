@@ -20,17 +20,21 @@ function main() {
 
 // Get the rendering context for WebGL
   var gl = getWebGLContext(canvas);
+  // var gl = canvas.getContext('webgl')
   if (!gl) {
-    console.log('Failed to get the rendering context for WebGL');
+    alert('Your browser does not support WebGL');
     return;
   }
 
   canvas.height = gl.canvas.clientHeight;
   canvas.width = gl.canvas.clientWidth;
+  
+  console.log(gl.canvas)
+  gl.viewport(0,0, gl.canvas.width,gl.canvas.height);
 
   // Initialize shaders
   if (!initShaders(gl, VSHADER_SOURCE, FSHADER_SOURCE)) {
-    console.log('Failed to intialize shaders.');
+    alert('Failed to intialize shaders.');
     return;
   }
 
