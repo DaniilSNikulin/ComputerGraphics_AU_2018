@@ -8,9 +8,15 @@ var VSHADER_SOURCE =
 
 // Fragment shader program
 var FSHADER_SOURCE =
+  'precision mediump float;\n' +
   'void main() {\n' +
   '  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);\n' +
+  '}\n' +
+  'vec3 jet(float t) \n'
+  '{\n' + 
+  '  return clamp(vec3(1.5) - abs(4.0 * vec3(t) + vec3(-3, -2, -1)), vec3(0), vec3(1));\n' + 
   '}\n';
+
 
 
 
@@ -29,7 +35,6 @@ function main() {
   canvas.height = gl.canvas.clientHeight;
   canvas.width = gl.canvas.clientWidth;
   
-  console.log(gl.canvas)
   gl.viewport(0,0, gl.canvas.width,gl.canvas.height);
 
   // Initialize shaders
