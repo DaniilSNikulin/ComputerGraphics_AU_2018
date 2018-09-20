@@ -26,7 +26,7 @@ var FSHADER_SOURCE =
 
   'vec3 mandelbrot(vec2 c) {\n' +
   '  c.x = c.x - 0.5;\n' +
-  '  const int max_iteration = 15000;\n' +
+  '  const int max_iteration = 100;\n' +
   '  vec2 z = c;\n' +
   '  for (int i = 0; i < max_iteration; ++i) {\n' +
   '    z = complex_product(z, z) + c;\n' +
@@ -62,6 +62,9 @@ var upCoord = [1, 1];
 var offset = [0.0, 0.0];
 var scale = [1, 1];
 
+var dragging = false;
+var lastX = 0, lastY = 0;
+
 
 function main() {
   // Retrieve <canvas> element
@@ -75,7 +78,6 @@ function main() {
 
   canvas.height = gl.canvas.clientHeight;
   canvas.width = gl.canvas.clientWidth;
-  
   gl.viewport(0,0, gl.canvas.width,gl.canvas.height);
 
   // Initialize shaders
@@ -93,8 +95,6 @@ function main() {
 
   // Specify the color for clearing <canvas>
   gl.clearColor(0, 0, 0, 1);
-
-  // Clear <canvas>
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, n);
 }
@@ -125,12 +125,45 @@ function init(gl, canvas) {
   var u_offset = gl.getUniformLocation(gl.program, 'offset');
   var u_scale = gl.getUniformLocation(gl.program, 'scale');
 
-  canvas.onmousedown = function(ev) { down(transform(ev, canvas)); };
-  canvas.onmouseup = function(ev) { 
-    up(transform(ev, canvas));
+  canvas.onmousedown = function(ev) {
+    if (ev.button == 2) {
+      dragging = true;
+    } else if (ev.button == 0) {
+      downCoord = transform(ev, canvas);
+    }
+  };
+  canvas.onmouseup = function(ev) {
+    if (ev.button == 2) {
+      dragging = false;
+    } else if (ev.button == 0) {
+      upCoord = transform(ev, canvas);
+      pushBox();
+      pushCoord(gl, u_offset, u_scale);
+    }
+  };
+  canvas.onmousemove = function(ev) {
+    var point = transform(ev, canvas);
+    var x = point[0], y = point[1];
+    if (dragging) {
+      downCoord[0] = downCoord[0] - (x - lastX);
+      downCoord[1] = downCoord[1] - (y - lastY);
+      upCoord[0] = upCoord[0] - (x - lastX);
+      upCoord[1] = upCoord[1] - (y - lastY);
+      pushBox();
+      pushCoord(gl, u_offset, u_scale);
+    }
+    lastX = x, lastY = y;
+  };
+  canvas.ondblclick = function(ev) {
+    downCoord = [-1, -1];
+    upCoord = [1, 1];
+    offset = [0.0, 0.0];
+    scale = [1, 1];
+    dragging = false;
+    lastX = 0, lastY = 0;
     pushBox();
     pushCoord(gl, u_offset, u_scale);
-  };
+  }
 
   gl.uniform2f(u_offset, 0, 0);
   gl.uniform2f(u_scale, 1, 1);
@@ -143,7 +176,6 @@ function init(gl, canvas) {
 }
 
 function transform(ev, canvas) {
-  console.log(ev.button);
   var x = ev.clientX; // координата X указателя мыши
   var y = ev.clientY; // координата Y указателя мыши
   var rect = ev.target.getBoundingClientRect();
@@ -152,13 +184,6 @@ function transform(ev, canvas) {
   return [x, y];
 }
 
-function down(coord) {
-  downCoord = coord;
-}
-
-function up(coord) {
-  upCoord = coord;
-}
 
 function pushBox() {
   var minX = Math.min(downCoord[0], upCoord[0]);
