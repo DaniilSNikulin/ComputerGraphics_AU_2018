@@ -1,60 +1,4 @@
 // HelloQuad.js (c) 2012 matsuda
-// Vertex shader program
-var VSHADER_SOURCE =
-  'attribute vec4 a_Position;\n' +
-  'varying vec4 fragment_position;\n' +
-  'void main() {\n' +
-  '  gl_Position = fragment_position = a_Position;\n' +
-  '}\n';
-
-// Fragment shader program
-var FSHADER_SOURCE =
-  'precision highp float;\n' +
-  'uniform vec2 offset;\n' +
-  'uniform vec2 scale;\n' +
-  'varying vec4 fragment_position;\n' +
-
-  'vec2 transform(vec2 point);\n' +
-  'vec3 mandelbrot(vec2 c);\n' +
-  'float modulus(vec2 v);\n' +
-  'vec2 complex_product(vec2 a, vec2 b);\n' +
-  'vec3 jet(float t);\n' +
-
-  'vec2 transform(vec2 point) {\n' +
-  '  return point * scale + offset;\n' +
-  '}\n' +
-
-  'vec3 mandelbrot(vec2 c) {\n' +
-  '  c.x = c.x - 0.5;\n' +
-  '  const int max_iteration = 100;\n' +
-  '  vec2 z = c;\n' +
-  '  for (int i = 0; i < max_iteration; ++i) {\n' +
-  '    z = complex_product(z, z) + c;\n' +
-  '    if (modulus(z) >= 4.0) {\n' +
-  '      float dist_from_set = float(i) / float(max_iteration);\n' +
-  '      return jet(dist_from_set);\n' +
-  '    }\n' + 
-  '  }\n' +
-  '  return vec3(0);\n' +
-  '}\n' +
-
-  'vec3 jet(float t){\n' +
-  '  t = t * 2.0 - 0.05;\n' +
-  '  return clamp(vec3(1.5) - abs(4.0*vec3(t) + vec3(-3,-2,-1)), vec3(0), vec3(1));\n' +
-  '}\n' +
-  'float modulus(vec2 v) {\n' +
-  '  vec2 w = v*v;\n' +
-  '  return w.x + w.y;\n' +
-  '}\n' +
-  'vec2 complex_product(vec2 a, vec2 b) {\n' +
-  '  return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x);\n' +
-  '}\n' +
-
-  'void main() {\n' +
-  '  vec2 point = fragment_position.xy;\n' +
-  '  vec3 c = mandelbrot(transform(point));\n' +
-  '  gl_FragColor = vec4(c.x, c.y, c.z, 1.0);\n' +
-  '}\n';
 
 
 var downCoord = [-1, -1];
@@ -69,6 +13,8 @@ var lastX = 0, lastY = 0;
 function main() {
   // Retrieve <canvas> element
   var canvas = document.getElementById('webgl');
+  var VSHADER_SOURCE = document.getElementById("v-shader").text;
+  var FSHADER_SOURCE = document.getElementById("f-shader").text;
 
   var gl = getWebGLContext(canvas);
   if (!gl) {
@@ -126,16 +72,16 @@ function init(gl, canvas) {
   var u_scale = gl.getUniformLocation(gl.program, 'scale');
 
   canvas.onmousedown = function(ev) {
-    if (ev.button == 2) {
+    if (ev.button == 0) {
       dragging = true;
-    } else if (ev.button == 0) {
+    } else if (ev.button == 2) {
       downCoord = transform(ev, canvas);
     }
   };
   canvas.onmouseup = function(ev) {
-    if (ev.button == 2) {
+    if (ev.button == 0) {
       dragging = false;
-    } else if (ev.button == 0) {
+    } else if (ev.button == 2) {
       upCoord = transform(ev, canvas);
       pushBox();
       pushCoord(gl, u_offset, u_scale);
@@ -145,10 +91,13 @@ function init(gl, canvas) {
     var point = transform(ev, canvas);
     var x = point[0], y = point[1];
     if (dragging) {
-      downCoord[0] = downCoord[0] - (x - lastX);
-      downCoord[1] = downCoord[1] - (y - lastY);
-      upCoord[0] = upCoord[0] - (x - lastX);
-      upCoord[1] = upCoord[1] - (y - lastY);
+      moment = 0.8;
+      dx = (x - lastX) * moment;
+      dy = (y - lastY) * moment;
+      downCoord[0] = downCoord[0] - dx;
+      downCoord[1] = downCoord[1] - dy;
+      upCoord[0] = upCoord[0] - dx;
+      upCoord[1] = upCoord[1] - dy;
       pushBox();
       pushCoord(gl, u_offset, u_scale);
     }
