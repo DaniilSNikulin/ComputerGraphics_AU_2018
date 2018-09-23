@@ -1,154 +1,303 @@
-// HelloQuad.js (c) 2012 matsuda
+// WebGL - 2D Geometry Matrix Transform with Projection
+// from https://webglfundamentals.org/webgl/webgl-2d-geometry-matrix-transform-with-projection.html
 
+  // "use strict";
 
 var downCoord = [-1, -1];
-var upCoord = [1, 1];
-var offset = [0.0, 0.0];
-var scale = [1, 1];
-
-var dragging = false;
-var lastX = 0, lastY = 0;
-
+var moveTransStart = null;
+var global_offset = [0.0, 0.0];
+var global_scale = 1;
+var needRecompute = true;
+var lastRecomputeDate = null;
 
 function main() {
-  // Retrieve <canvas> element
+  // Get A WebGL context
+  /** @type {HTMLCanvasElement} */
   var canvas = document.getElementById('webgl');
-  var VSHADER_SOURCE = document.getElementById("v-shader").text;
-  var FSHADER_SOURCE = document.getElementById("f-shader").text;
+  var vert_fractal_shader = document.getElementById("fractal-v-shader").text;
+  var fragm_fractal_shader = document.getElementById("fractal-f-shader").text;
+  var vert_texture_shader = document.getElementById("texture-v-shader").text;
+  var fragm_texture_shader = document.getElementById("texture-f-shader").text;
 
-  var gl = getWebGLContext(canvas);
+  var gl = canvas.getContext("webgl");
   if (!gl) {
     alert('Your browser does not support WebGL');
     return;
   }
 
-  canvas.height = gl.canvas.clientHeight;
-  canvas.width = gl.canvas.clientWidth;
-  gl.viewport(0,0, gl.canvas.width,gl.canvas.height);
+  // setup GLSL program
+  var program = webglUtils.createProgramFromScripts(gl, ["texture-v-shader", "texture-f-shader"]);
+  var fractalProgram = webglUtils.createProgramFromScripts(gl, ["fractal-v-shader", "fractal-f-shader"]);
 
-  // Initialize shaders
-  if (!initShaders(gl, VSHADER_SOURCE, FSHADER_SOURCE)) {
-    alert('Failed to intialize shaders.');
-    return;
+  // look up where the vertex data needs to go and uniforms
+  var positionLocation = gl.getAttribLocation(program, "a_position");
+  var texcoordLocation = gl.getAttribLocation(program, "a_texcoord");
+  var matrixLocation = gl.getUniformLocation(program, "u_matrix");
+  var textureLocation = gl.getUniformLocation(program, "u_texture");
+
+  // lookup fractal shaders vertex data and uniforms
+  var a_position = gl.getAttribLocation(fractalProgram, "a_position");
+  var u_offset = gl.getUniformLocation(fractalProgram, 'offset');
+  var u_scale = gl.getUniformLocation(fractalProgram, 'scale');
+  var u_max_iter = gl.getUniformLocation(fractalProgram, 'u_max');
+
+  var positionBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+  setGeometry(gl, 3);
+  var fractalPositionBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, fractalPositionBuffer);
+  setGeometry(gl, 1);
+
+  // provide texture coordinates for the rectangle.
+  var texcoordBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
+  setTexcoords(gl);
+
+  // Create a texture to render to
+  const targetTextureWidth =  3*gl.canvas.clientWidth;
+  const targetTextureHeight = 3*gl.canvas.clientHeight;
+  const targetTexture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, targetTexture);
+  {
+    // define size and format of level 0
+    const level = 0;
+    const internalFormat = gl.RGBA;
+    const border = 0;
+    const format = gl.RGBA;
+    const type = gl.UNSIGNED_BYTE;
+    const data = null;
+    gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
+                  targetTextureWidth, targetTextureHeight, border,
+                  format, type, data);
+
+    // set the filtering so we don't need mips
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   }
 
-  // Write the positions of vertices to a vertex shader
-  var n = init(gl, canvas);
-  if (n < 0) {
-    console.log('Failed to set the positions of the vertices');
-    return;
+  // Create and bind the framebuffer
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+
+  // attach the texture as the first color attachment
+  const level = 0;
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, targetTexture, level);
+
+  var translation = [0, 0];
+  var scale = 1;
+  var maxIter = 100;
+  var dragging = false;
+
+  drawScene();
+
+  // Setup a ui.
+  webglLessonsUI.setupSlider("#maxIter", {value: 100, slide: updateMaxIter, min: 50, max: 2000 });
+  function updateMaxIter(event, ui) {
+    maxIter = ui.value;
+    needRecompute = true;
+    drawScene();
   }
-
-  // Specify the color for clearing <canvas>
-  gl.clearColor(0, 0, 0, 1);
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.drawArrays(gl.TRIANGLE_STRIP, 0, n);
-}
-
-
-
-function init(gl, canvas) {
-  var vertices = new Float32Array([-1,1,   -1,-1,   1,1,　1,-1]);
-  var n = 4; // The number of vertices
-
-  // Create a buffer object
-  var vertexBuffer = gl.createBuffer();
-  if (!vertexBuffer) {
-    console.log('Failed to create the buffer object');
-    return -1;
-  }
-
-  // Bind the buffer object to target
-  gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-
-  var a_Position = gl.getAttribLocation(gl.program, 'a_Position');
-  if (a_Position < 0) {
-    console.log('Failed to get the storage location of a_Position');
-    return -1;
-  }
-
-  var u_offset = gl.getUniformLocation(gl.program, 'offset');
-  var u_scale = gl.getUniformLocation(gl.program, 'scale');
-
   canvas.onmousedown = function(ev) {
     if (ev.button == 0) {
-      dragging = true;
-    } else if (ev.button == 2) {
       downCoord = transform(ev, canvas);
+      moveTransStart = [translation[0], translation[1]];
+      dragging = true;
     }
   };
   canvas.onmouseup = function(ev) {
     if (ev.button == 0) {
       dragging = false;
-    } else if (ev.button == 2) {
-      upCoord = transform(ev, canvas);
-      pushBox();
-      pushCoord(gl, u_offset, u_scale);
     }
   };
   canvas.onmousemove = function(ev) {
-    var point = transform(ev, canvas);
-    var x = point[0], y = point[1];
     if (dragging) {
-      moment = 0.8;
-      dx = (x - lastX) * moment;
-      dy = (y - lastY) * moment;
-      downCoord[0] = downCoord[0] - dx;
-      downCoord[1] = downCoord[1] - dy;
-      upCoord[0] = upCoord[0] - dx;
-      upCoord[1] = upCoord[1] - dy;
-      pushBox();
-      pushCoord(gl, u_offset, u_scale);
+      var point = transform(ev, canvas);
+      var x = point[0], y = point[1];
+      var dx = (x - downCoord[0]) / global_scale;
+      var dy = (y - downCoord[1]) / global_scale;
+      translation[0] = moveTransStart[0] + dx;
+      translation[1] = moveTransStart[1] + dy;
+      if (Math.abs(translation[0]) > 2 || Math.abs(translation[1]) > 2) {
+        needRecompute = true;
+      }
+      var endDate   = new Date();
+      var seconds = (endDate.getTime() - lastRecomputeDate.getTime()) / 1000;
+      if (!seconds || seconds > 5) {
+        needRecompute = true;
+      }
+      drawScene();
     }
-    lastX = x, lastY = y;
   };
-  canvas.ondblclick = function(ev) {
-    downCoord = [-1, -1];
-    upCoord = [1, 1];
-    offset = [0.0, 0.0];
-    scale = [1, 1];
-    dragging = false;
-    lastX = 0, lastY = 0;
-    pushBox();
-    pushCoord(gl, u_offset, u_scale);
+  addOnWheel(canvas, function(e) {
+    var delta = e.deltaY || e.detail || e.wheelDelta;
+    if (delta > 0) scale *= 0.95;
+    else scale *= 1.05;
+    var endDate   = new Date();
+    var seconds = (endDate.getTime() - lastRecomputeDate.getTime()) / 1000;
+    if (!seconds || seconds > 1.5) {
+      needRecompute = true;
+    }
+    drawScene();
+  });
+
+  function drawFractal() {
+    gl.useProgram(fractalProgram);
+    gl.enableVertexAttribArray(a_position);
+    gl.bindBuffer(gl.ARRAY_BUFFER, fractalPositionBuffer);
+
+    // Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
+    var size = 2;          // 2 components per iteration
+    gl.vertexAttribPointer(a_position, size, gl.FLOAT, false, 0, 0);
+    gl.uniform2f(u_offset, global_offset[0], global_offset[1]);
+    gl.uniform2f(u_scale, 3*global_scale, 3*global_scale);
+    gl.uniform1i(u_max_iter, maxIter);
+
+    // Draw the geometry.
+    var count = 4;
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, count);
   }
 
-  gl.uniform2f(u_offset, 0, 0);
-  gl.uniform2f(u_scale, 1, 1);
+  function drawQuad() {
+    // Tell it to use our program (pair of shaders)
+    gl.useProgram(program);
 
-  // Assign the buffer object to a_Position variable
-  gl.vertexAttribPointer(a_Position, 2, gl.FLOAT, false, 0, 0);
-  gl.enableVertexAttribArray(a_Position);
+    // Turn on the attribute
+    gl.enableVertexAttribArray(positionLocation);
 
-  return n;
+    // Bind the position buffer.
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+
+    // Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
+    var size = 2;          // 2 components per iteration
+    gl.vertexAttribPointer(positionLocation, size, gl.FLOAT, false, 0, 0);
+
+    // Turn on the teccord attribute
+    gl.enableVertexAttribArray(texcoordLocation);
+    gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
+    // Tell the position attribute how to get data out of positionBuffer (ARRAY_BUFFER)
+    var size = 2;          // 2 components per iteration
+    gl.vertexAttribPointer(texcoordLocation, size, gl.FLOAT, false, 0, 0);
+
+    // Compute the matrices
+    var projectionMatrix = m3.identity();
+    var translationMatrix = m3.translation(translation[0], translation[1]);
+    var rotationMatrix = m3.identity();
+    var scaleMatrix = m3.scaling(scale, scale);
+
+    // Multiply the matrices.
+    var matrix = m3.multiply(projectionMatrix, translationMatrix);
+    matrix = m3.multiply(matrix, rotationMatrix);
+    matrix = m3.multiply(matrix, scaleMatrix);
+
+    // Set the matrix.
+    gl.uniformMatrix3fv(matrixLocation, false, matrix);
+    // Tell the shader to use texture unit 0 for u_texture
+    gl.uniform1i(textureLocation, 0);
+
+    // Draw the geometry.
+    var count = 4;
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, count);
+  }
+
+  // Draw the scene.
+  function drawScene() {
+    canvas.height = gl.canvas.clientHeight;
+    canvas.width = gl.canvas.clientWidth;
+
+    if (needRecompute) {
+      global_offset[0] -= translation[0] * global_scale;
+      global_offset[1] -= translation[1] * global_scale;
+      translation = [0, 0];
+      global_scale /= 0.8*scale + 1*0.2;
+      scale = 1;
+      // render to our targetTexture by binding the framebuffer
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+
+      // Tell WebGL how to convert from clip space to pixels
+      gl.viewport(0, 0, targetTextureWidth, targetTextureHeight);
+
+      // Clear the canvas AND the depth buffer.
+      gl.clearColor(0, 0, 1, 1);   // clear to blue
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      drawFractal();
+      needRecompute = false;
+      lastRecomputeDate = new Date();
+    }
+
+    {
+      // render to the canvas
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+      // render the cube with the texture we just rendered to
+      gl.bindTexture(gl.TEXTURE_2D, targetTexture);
+
+      // Tell WebGL how to convert from clip space to pixels
+      gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+      // Clear the canvas AND the depth buffer.
+      gl.clearColor(1, 1, 1, 1);   // clear to white
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      drawQuad();
+    }
+  }
 }
+
+
+// Fill the buffer with the values that define a letter 'F'.
+function setGeometry(gl, scale) {
+  gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([
+        -scale,  scale,
+        -scale, -scale,
+         scale,  scale,
+         scale, -scale
+      ]),
+      gl.STATIC_DRAW);
+}
+
+
+// Fill the buffer with texture coordinates the cube.
+function setTexcoords(gl) {
+  gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([
+          0, 1,
+          0, 0,
+          1, 1,
+          1, 0,
+      ]),
+      gl.STATIC_DRAW);
+}
+
 
 function transform(ev, canvas) {
   var x = ev.clientX; // координата X указателя мыши
   var y = ev.clientY; // координата Y указателя мыши
   var rect = ev.target.getBoundingClientRect();
-  x = ((x - rect.left) - canvas. width/2)/(canvas.width/2) * scale[0] + offset[0];
-  y = (canvas. height/2 - (y - rect.top))/(canvas.height/2) *scale[1] + offset[1];
+  x = ((x - rect.left) - canvas. width/2)/(canvas.width/2) * global_scale + global_offset[0];
+  y = (canvas. height/2 - (y - rect.top))/(canvas.height/2) *global_scale + global_offset[1];
   return [x, y];
 }
 
-
-function pushBox() {
-  var minX = Math.min(downCoord[0], upCoord[0]);
-  var maxX = Math.max(downCoord[0], upCoord[0]);
-  var minY = Math.min(downCoord[1], upCoord[1]);
-  var maxY = Math.max(downCoord[1], upCoord[1]);
-
-  offset = [(maxX + minX)/2, (maxY + minY)/2];
-  scale = [(maxX - minX)/2, (maxY - minY)/2];
-  // console.log('push', offset, scale);
+function addOnWheel(elem, handler) {
+  if (elem.addEventListener) {
+    if ('onwheel' in document) {
+      // IE9+, FF17+
+      elem.addEventListener("wheel", handler);
+    } else if ('onmousewheel' in document) {
+      // устаревший вариант события
+      elem.addEventListener("mousewheel", handler);
+    } else {
+      // 3.5 <= Firefox < 17, более старое событие DOMMouseScroll пропустим
+      elem.addEventListener("MozMousePixelScroll", handler);
+    }
+  } else { // IE8-
+    text.attachEvent("onmousewheel", handler);
+  }
 }
 
-
-function pushCoord(gl, u_offset, u_scale) {
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.uniform2f(u_offset, offset[0], offset[1]);
-  gl.uniform2f(u_scale, scale[0], scale[1]);
-  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-}
+main();

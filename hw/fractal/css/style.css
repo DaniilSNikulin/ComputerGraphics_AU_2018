@@ -1,10 +1,9 @@
-body{
-	margin: 0;
-	padding: 0;
-	overflow: hidden;
+@import url("https://webglfundamentals.org/webgl/resources/webgl-tutorials.css");
+body {
+  margin: 0;
 }
-
-#webgl{
-	width: 100vw;
-	height: 100vh;
+canvas {
+  width: 100vw;
+  height: 100vh;
+  display: block;
 }
