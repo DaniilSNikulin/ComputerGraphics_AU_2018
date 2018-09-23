@@ -10,6 +10,9 @@ var global_scale = 1;
 var needRecompute = true;
 var lastRecomputeDate = null;
 
+// костыль для моего браузера (тот же код на codePen работает и без него)
+var counter = 0;
+
 function main() {
   // Get A WebGL context
   /** @type {HTMLCanvasElement} */
@@ -86,13 +89,13 @@ function main() {
 
   var translation = [0, 0];
   var scale = 1;
-  var maxIter = 100;
+  var maxIter = 200;
   var dragging = false;
 
   drawScene();
 
   // Setup a ui.
-  webglLessonsUI.setupSlider("#maxIter", {value: 100, slide: updateMaxIter, min: 50, max: 2000 });
+  webglLessonsUI.setupSlider("#maxIter", {value: maxIter, slide: updateMaxIter, min: 50, max: 1000 });
   function updateMaxIter(event, ui) {
     maxIter = ui.value;
     needRecompute = true;
@@ -121,13 +124,13 @@ function main() {
       if (Math.abs(translation[0]) > 2 || Math.abs(translation[1]) > 2) {
         needRecompute = true;
       }
-      var endDate   = new Date();
-      var seconds = (endDate.getTime() - lastRecomputeDate.getTime()) / 1000;
-      if (!seconds || seconds > 5) {
-        needRecompute = true;
-      }
-      drawScene();
     }
+    var endDate   = new Date();
+    var seconds = (endDate.getTime() - lastRecomputeDate.getTime()) / 1000;
+    if (!seconds || seconds > 3) {
+      needRecompute = true;
+    }
+    drawScene();
   };
   addOnWheel(canvas, function(e) {
     var delta = e.deltaY || e.detail || e.wheelDelta;
@@ -135,7 +138,7 @@ function main() {
     else scale *= 1.05;
     var endDate   = new Date();
     var seconds = (endDate.getTime() - lastRecomputeDate.getTime()) / 1000;
-    if (!seconds || seconds > 1.5) {
+    if (!seconds || seconds > 2 || scale > 3 || scale < 0.33) {
       needRecompute = true;
     }
     drawScene();
@@ -205,7 +208,8 @@ function main() {
     canvas.height = gl.canvas.clientHeight;
     canvas.width = gl.canvas.clientWidth;
 
-    if (needRecompute) {
+    if (needRecompute || counter < 2) {
+      counter += 1;
       global_offset[0] -= translation[0] * global_scale;
       global_offset[1] -= translation[1] * global_scale;
       translation = [0, 0];
