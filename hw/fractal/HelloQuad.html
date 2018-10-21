@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Hello Quad</title>
+  </head>
+
+  <body onload="main()">
+    <canvas id="webgl">
+      Please use a browser that supports "canvas"
+    </canvas>
+
+    <div id="uiContainer">
+      <div id="ui">
+        <div id="maxIter"></div>
+      </div>
+    </div>
+
+    <!-- texture shaders -->
+    <script id="texture-v-shader" type="x-shader/x-vertex">
+    attribute vec2 a_position;
+    attribute vec2 a_texcoord;
+    uniform mat3 u_matrix;
+    varying vec2 v_texcoord;
+    void main() {
+      gl_Position = vec4((u_matrix * vec3(a_position, 1)).xy, 0, 1);;
+      v_texcoord = a_texcoord;
+    }
+    </script>
+    <script id="texture-f-shader" type="x-shader/x-fragment">
+    precision mediump float;
+    varying vec2 v_texcoord; // Passed in from the vertex shader.
+    uniform sampler2D u_texture;
+    void main() {
+       gl_FragColor = texture2D(u_texture, v_texcoord);
+    }
+    </script>
+
+    <!-- fractal shaders -->
+    <script id="fractal-v-shader" type="x-shader/x-vertex">
+      attribute vec4 a_position;
+      varying vec4 fragment_position;
+      void main() {
+        gl_Position = fragment_position = a_position;
+      }
+    </script>
+    <script id="fractal-f-shader" type="x-shader/x-fragment">
+      precision mediump float;
+      uniform vec2 offset;
+      uniform vec2 scale;
+      uniform int u_max;
+      varying vec4 fragment_position;
+
+      vec2 transform(vec2 point);
+      vec3 mandelbrot(vec2 c);
+      float modulus(vec2 v);
+      vec2 complex_product(vec2 a, vec2 b);
+      vec3 jet(float t);
+
+      vec2 transform(vec2 point) {
+        return point * scale + offset;
+      }
+      vec3 mandelbrot(vec2 c) {
+        c.x = c.x - 0.5;
+        const int max_bound_iteration = 5000;
+        vec2 z = c;
+        for (int i = 0; i < max_bound_iteration; ++i) {
+          z = complex_product(z, z) + c;
+          if (modulus(z) >= 4.0) {
+            float dist_from_set = float(i) / float(u_max);
+            return jet(dist_from_set);
+          }
+          if (i > u_max) {
+            return vec3(0);
+          }
+        }
+        return vec3(0);
+      }
+      vec3 jet(float t){
+        t = t * 2.0 - 0.05;
+        return clamp(vec3(1.5) - abs(4.0*vec3(t) + vec3(-3,-2,-1)), vec3(0), vec3(1));
+      }
+      float modulus(vec2 v) {
+        vec2 w = v*v;
+        return w.x + w.y;
+      }
+      vec2 complex_product(vec2 a, vec2 b) {
+        return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x);
+      }
+      void main() {
+        vec2 point = fragment_position.xy;
+        vec3 c = mandelbrot(transform(point));
+        gl_FragColor = vec4(c.x, c.y, c.z, 1.0);
+      }
+    </script>
+
+    <script src="../lib/webgl-utils.js"></script>
+    <script src="../lib/webgl-lessons-ui.js"></script>
+    <script src="../lib/m3.js"></script>
+    <script src="HelloQuad.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+  </body>
+</html>
