@@ -39,7 +39,8 @@ function main() {
   var positionAttributeLocationSimple = gl.getAttribLocation(program, "a_position");
   var normalAttributeLocationSimple = gl.getAttribLocation(program, "a_normal");
 
-  var matrixLocation = gl.getUniformLocation(program, "u_matrix");
+  var worldViewProjectionLocation = gl.getUniformLocation(program, "u_worldViewProjection");
+  var worldInverseTransposeLocation = gl.getUniformLocation(program, "u_worldInverseTranspose");
   var colorLocation = gl.getUniformLocation(program, "u_color");
   var reverseLightDirectionLocation = gl.getUniformLocation(program, "u_reverseLightDirection");
 
@@ -66,7 +67,29 @@ function main() {
   gl.vertexAttribPointer(normalAttributeLocationSimple, size, gl.FLOAT, false, 0, 0);
 
 
+  // First let's make some variables
+  // to hold the translation,
+  var fieldOfViewRadians = degToRad(60);
+  var fRotationRadians = 0;
+
   drawScene();
+
+  function radToDeg(r) {
+    return r * 180 / Math.PI;
+  }
+
+  function degToRad(d) {
+    return d * Math.PI / 180;
+  }
+
+  // Setup a ui.
+  webglLessonsUI.setupSlider("#fRotation", {value: radToDeg(fRotationRadians),
+   slide: updateRotation, min: -360, max: 360});
+
+  function updateRotation(event, ui) {
+    fRotationRadians = degToRad(ui.value);
+    drawScene();
+  }
 
 
   // Draw the scene.
@@ -87,26 +110,39 @@ function main() {
     // Bind the attribute/buffer set we want.
     gl.bindVertexArray(vao);
 
-    scale = 3
-    // Compute the matrices
-    var projectionMatrix = m4.identity();
-    var translationMatrix = m4.translation(0, 0, 0);
-    var rotationMatrix = m4.identity();
-    var scaleMatrix = m4.scaling(scale, scale, scale);
+    var aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+    var zNear = 0.1;
+    var zFar = 20;
+    var projectionMatrix = m4.perspective(fieldOfViewRadians, aspect, zNear, zFar);
 
-    // Multiply the matrices.
-    var matrix = m4.multiply(projectionMatrix, translationMatrix);
-    matrix = m4.multiply(matrix, rotationMatrix);
-    matrix = m4.multiply(matrix, scaleMatrix);
+    // Compute the camera's matrix
+    var camera = [0.2, 0.25, .5];
+    var target = [0, 0.1, 0];
+    var up = [0, 1, 0];
+    var cameraMatrix = m4.lookAt(camera, target, up);
 
-    // Set the matrix.
-    gl.uniformMatrix4fv(matrixLocation, false, matrix);
+    // Make a view matrix from the camera matrix.
+    var viewMatrix = m4.inverse(cameraMatrix);
+    var viewProjectionMatrix = m4.multiply(projectionMatrix, viewMatrix);
+
+    var worldMatrix = m4.yRotation(fRotationRadians);
+    var worldViewProjectionMatrix = m4.multiply(viewProjectionMatrix, worldMatrix);
+    var worldInverseMatrix = m4.inverse(worldMatrix);
+    var worldInverseTransposeMatrix = m4.transpose(worldInverseMatrix);
+
+    // Set the matrices
+    gl.uniformMatrix4fv(
+        worldViewProjectionLocation, false,
+        worldViewProjectionMatrix);
+    gl.uniformMatrix4fv(
+        worldInverseTransposeLocation, false,
+        worldInverseTransposeMatrix);
 
     // Set the color to use
     gl.uniform4fv(colorLocation, [0.7, 0.9, 0.2, 1]); // green
 
     // set the light direction.
-    gl.uniform3fv(reverseLightDirectionLocation, m4.normalize([0.5, 0.7, 1]));
+    gl.uniform3fv(reverseLightDirectionLocation, m4.normalize([-0.5, 1.7, 1]));
 
     // Draw the geometry.
     var primitiveType = gl.TRIANGLES;
