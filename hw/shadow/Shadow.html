@@ -20,15 +20,14 @@
 
     <!-- phong shaders -->
     <script id="phong-v-shader" type="x-shader/x-vertex">#version 300 es
-    layout (location = 0) in vec3 VertexPosition;
-    layout (location = 1) in vec3 VertexNormal;
+    in vec3 VertexPosition;
+    in vec3 VertexNormal;
 
     out vec3 Position;
     out vec3 Normal;
 
-    uniform mat4 ModelViewMatrix;
+    uniform mat4 ModelViewMatrix;   // == world matrix (IMHO)
     uniform mat3 NormalMatrix;
-    uniform mat4 ProjectionMatrix;
     uniform mat4 MVP;
 
     void main() {
@@ -52,7 +51,7 @@
     uniform vec3 Ks;            // Specular reflectivity
     uniform float Shininess;    // Specular shininess factor
 
-    layout( location = 0 ) out vec4 FragColor;
+    out vec4 FragColor;
 
     vec3 ads( )
     {
@@ -74,49 +73,6 @@
 
 
 
-    <!-- simple shaders -->
-    <script id="simple-v-shader" type="x-shader/x-vertex">#version 300 es
-    in vec4 a_position;
-    in vec3 a_normal;
-
-    uniform mat4 u_worldViewProjection;
-    uniform mat4 u_worldInverseTranspose;
-
-    // varying to pass the normal to the fragment shader
-    out vec3 v_normal;
-
-    // all shaders have a main function
-    void main() {
-      // Multiply the position by the matrix.
-      gl_Position = u_worldViewProjection * a_position;
-
-      // orient the normals and pass to the fragment shader
-      v_normal = mat3(u_worldInverseTranspose) * a_normal;
-    }
-    </script>
-
-    <script id="simple-f-shader" type="x-shader/x-fragment">#version 300 es
-    precision mediump float;
-
-    // Passed in and varied from the vertex shader.
-    in vec3 v_normal;
-
-    uniform vec3 u_reverseLightDirection;
-    uniform vec4 u_color;
-
-    // we need to declare an output for the fragment shader
-    out vec4 outColor;
-
-    void main() {
-      vec3 normal = normalize(v_normal);
-      float light = dot(normal, u_reverseLightDirection);
-
-      outColor = u_color;
-      outColor.rgb *= light;
-    }
-    </script>
-
-
 
     <!-- Three.js library -->
     <script src="../lib/three.min.js"></script>
@@ -127,7 +83,7 @@
     <script src="../lib/webgl-lessons-ui.js"></script>
     <script src="../lib/m3.js"></script>
     <script src="../lib/m4.js"></script>
-    <script src="../lib/3d-math.js"></script>
+    <!-- <script src="../lib/3d-math.js"></script> -->
 
      <!-- self code -->
     <script src="Shadow.js"></script>

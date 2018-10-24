@@ -1186,6 +1186,25 @@
     return dst;
   }
 
+  function normalMatrix( worldMatrix, dst ) {
+    var src = transpose(inverse(worldMatrix));
+    dst = new Float32Array(9);
+
+    dst[ 0] = src[ 0];
+    dst[ 1] = src[ 1];
+    dst[ 2] = src[ 2];
+
+    dst[ 3] = src[ 4];
+    dst[ 4] = src[ 5];
+    dst[ 5] = src[ 6];
+
+    dst[ 6] = src[ 8];
+    dst[ 7] = src[ 9];
+    dst[ 8] = src[ 10];
+
+    return dst
+  }
+
   return {
     copy: copy,
     lookAt: lookAt,
@@ -1219,6 +1238,7 @@
     transformPoint: transformPoint,
     transformDirection: transformDirection,
     transformNormal: transformNormal,
+    normalMatrix: normalMatrix,
   };
 
 }));
