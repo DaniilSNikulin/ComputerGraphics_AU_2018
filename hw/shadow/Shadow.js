@@ -6,6 +6,7 @@
 function main() {
   // Get A WebGL context
   /** @type {HTMLCanvasElement} */
+  m4 = twgl.m4;
   var canvas = document.getElementById('comp_graphics_hw');
 
 
@@ -20,55 +21,35 @@ function main() {
     return;
   }
 
+  var positionBuffer = gl.createBuffer();
+  var normalBuffer = gl.createBuffer();
+
 
   // setup GLSL programs
-  var phong_program = webglUtils.createProgramFromScripts(gl, ["phong-v-shader", "phong-f-shader"]);
+  const phongProgramInfo = twgl.createProgramInfo(gl, ["phong-v-shader", "phong-f-shader"]);
+  const phong_program = phongProgramInfo.program;
+  var program = phong_program;
 
-  var positionLocationPhong = gl.getAttribLocation(phong_program, "VertexPosition");
-  var normalLocationPhong = gl.getAttribLocation(phong_program, "VertexNormal");
+  const arrays = {
+    VertexPosition: bunnyGeometry.position.array,
+    VertexNormal: bunnyGeometry.normal.array,
+  };
+  const bufferInfo = twgl.createBufferInfoFromArrays(gl, arrays);
 
-  var MVPLocationPhong = gl.getUniformLocation(phong_program, "MVP");
-  var normalMatrixLocationPhong = gl.getUniformLocation(phong_program, "NormalMatrix");
-  var MVLocationPhong = gl.getUniformLocation(phong_program, "ModelViewMatrix");
-
-  var lightPositionLocationPhong = gl.getUniformLocation(phong_program, "LightPosition");
-  var lightIntensityLocationPhong = gl.getUniformLocation(phong_program, "LightIntensity");
-
-  var kdLocationPhong = gl.getUniformLocation(phong_program, "Kd");
-  var kaLocationPhong = gl.getUniformLocation(phong_program, "Ka");
-  var ksLocationPhong = gl.getUniformLocation(phong_program, "Ks");
-  var shininessLocationPhong = gl.getUniformLocation(phong_program, "Shininess");
-
-
-  var vao = gl.createVertexArray();
-  gl.bindVertexArray(vao);
-  gl.enableVertexAttribArray(positionLocationPhong);
-
-  var positionBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, bunnyGeometry.position.array, gl.STATIC_DRAW);
-
-  // Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
-  var size = bunnyGeometry.position.itemSize;
-  gl.vertexAttribPointer(positionLocationPhong, size, gl.FLOAT, false, 0, 0);
-
-  // Turn on the attribute
-  gl.enableVertexAttribArray(normalLocationPhong);
-
-  var normalBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, bunnyGeometry.normal.array, gl.STATIC_DRAW);
-
-  var size = bunnyGeometry.normal.itemSize;
-  gl.vertexAttribPointer(normalLocationPhong, size, gl.FLOAT, false, 0, 0);
-
+  var uniforms = {
+    Kd: [0.5, 0.8, 0.5],
+    Ka: [0.1, 0.1, 0.1],
+    Ks: [0.9, 0.3, 0.9],
+    Shininess: 180.0,
+    LightPosition: [0, 1, 0, 0],
+    LightIntensity: [0.8,0.8,0.8],
+  };
 
   // First let's make some variables
   // to hold the translation,
   var fieldOfViewRadians = degToRad(60);
   var fRotationRadians = 0;
 
-  program = phong_program;
   drawScene();
 
   function radToDeg(r) {
@@ -91,9 +72,7 @@ function main() {
 
   // Draw the scene.
   function drawScene() {
-    webglUtils.resizeCanvasToDisplaySize(gl.canvas);
-
-    // Tell WebGL how to convert from clip space to pixels
+    twgl.resizeCanvasToDisplaySize(gl.canvas);
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
     // Clear the canvas AND the depth buffer.
@@ -102,17 +81,6 @@ function main() {
 
     gl.enable(gl.DEPTH_TEST);
     gl.enable(gl.CULL_FACE);
-    gl.useProgram(program);
-
-    // Bind the attribute/buffer set we want.
-    gl.bindVertexArray(vao);
-
-    gl.uniform3fv(kdLocationPhong, [0.5, 0.8, 0.5]);
-    gl.uniform3fv(ksLocationPhong, [0.9, 0.3, 0.9]);
-    gl.uniform3fv(kaLocationPhong, [0.1, 0.1, 0.1]);
-    gl.uniform1f( shininessLocationPhong, 180.0);
-    gl.uniform4fv(lightPositionLocationPhong, [0, 1, 0, 0] );
-    gl.uniform3fv(lightIntensityLocationPhong, [0.8,0.8,0.8] );
 
 
     // Compute the camera's matrix
@@ -127,16 +95,18 @@ function main() {
     var zFar = 20;
     var projectionMatrix = m4.perspective(fieldOfViewRadians, aspect, zNear, zFar);
 
-    var modelMatrix = m4.yRotation(fRotationRadians);
-    var mvMatrix = m4.multiply(viewMatrix, modelMatrix);
-    var mvpMatrix = m4.multiply(projectionMatrix, mvMatrix);
+    var modelMatrix = m4.rotationY(fRotationRadians);
+    var mvMatrix = m4.multiply(modelMatrix, viewMatrix);
+    var mvpMatrix = m4.multiply(mvMatrix, projectionMatrix);
     var normalMatrix = m4.normalMatrix(mvMatrix);
 
-    // Set the matrices
-    gl.uniformMatrix4fv(MVLocationPhong, false, mvMatrix);
-    gl.uniformMatrix3fv(normalMatrixLocationPhong, false, normalMatrix);
-    gl.uniformMatrix4fv(MVPLocationPhong, false, mvpMatrix);
+    uniforms.ModelViewMatrix = mvMatrix;
+    uniforms.NormalMatrix = normalMatrix;
+    uniforms.MVP = mvpMatrix;
 
+    gl.useProgram(program);
+    twgl.setBuffersAndAttributes(gl, phongProgramInfo, bufferInfo);
+    twgl.setUniforms(phongProgramInfo, uniforms);
 
     // Draw the geometry.
     var primitiveType = gl.TRIANGLES;
