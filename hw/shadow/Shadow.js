@@ -3,17 +3,89 @@
 
   // "use strict";
 
+world = {
+  look: {
+    camera: [1.1, 1.15, 0.],
+    target: [0, 0.2, 0],
+    up: [0, 1, 0],
+  },
+  projection: {
+    zNear: 0.1,
+    zFar: 20,
+  },
+  light: {
+    position: [0, 1, 0, 0],
+    intensity: [0.8,0.8,0.8],
+  },
+  fieldOfViewDegree: 60,
+  fRotationDegree: 0,
+};
+
+
+function radToDeg(r) {
+  return r * 180 / Math.PI;
+}
+function degToRad(d) {
+  return d * Math.PI / 180;
+}
+
+
+function computeUniforms(gl, world, model) {
+  m4 = twgl.m4;
+  var aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+  var projectionMatrix = m4.perspective(degToRad(world.fieldOfViewDegree), aspect, world.projection.zNear, world.projection.zFar);
+  var viewMatrix = m4.inverse(m4.lookAt(world.look.camera, world.look.target, world.look.up));
+
+  var initModelMatrix = obj.getInitModelMatrix(model.name);
+  var translateMatrix = m4.translation(model.center);
+  var rotateMatrix = model.needRotate ? m4.rotationY(degToRad(world.fRotationDegree)) : m4.identity();
+  var modelMatrix = m4.multiply(m4.multiply(initModelMatrix, rotateMatrix), translateMatrix);
+
+  var mvMatrix = m4.multiply(modelMatrix, viewMatrix);
+  var mvpMatrix = m4.multiply(mvMatrix, projectionMatrix);
+  var normalMatrix = m4.normalMatrix(mvMatrix);
+
+  return {
+    Kd: model.material.diffuse,
+    Ka: model.material.ambient,
+    Ks: model.material.specular,
+    Shininess: model.material.shininess,
+    LightPosition: world.light.position,
+    LightIntensity: world.light.intensity,
+    ModelViewMatrix: mvMatrix,
+    NormalMatrix: normalMatrix,
+    MVP: mvpMatrix,
+  };
+}
+
+
+function computeModel(name, center) {
+  var model = obj.getModel(name);
+  var attribs = {
+    VertexPosition: model.position.array,
+    VertexNormal: model.normal.array,
+  }
+  return {
+    name: name,
+    model: model,
+    center: center,
+    attribs: attribs,
+  };
+}
+
+
 function main() {
   // Get A WebGL context
   /** @type {HTMLCanvasElement} */
   m4 = twgl.m4;
   var canvas = document.getElementById('comp_graphics_hw');
 
+  var models = [
+    { name: 'chair', center: [0, 0,  0.5], needRotate: true, },
+    { name: 'bunny', center: [0, 0, -0.5], needRotate: true, },
+    { name: 'plane', center: [0, -0.2, 0], needRotate: false,},
+  ]
 
-  var scene = new THREE.Scene();
-  var bunnyText = document.getElementById("bunny-obj").text;
-  var bunnyObject = new THREE.OBJLoader().parse(bunnyText)
-  var bunnyGeometry = bunnyObject.children[0].geometry.attributes
 
   var gl = canvas.getContext("webgl2");
   if (!gl) {
@@ -26,42 +98,30 @@ function main() {
   const phong_program = phongProgramInfo.program;
   var program = phong_program;
 
-  const arrays = {
-    VertexPosition: bunnyGeometry.position.array,
-    VertexNormal: bunnyGeometry.normal.array,
-  };
-  const bufferInfo = twgl.createBufferInfoFromArrays(gl, arrays);
 
-  var uniforms = {
-    Kd: [0.5, 0.8, 0.5],
-    Ka: [0.1, 0.1, 0.1],
-    Ks: [0.9, 0.3, 0.9],
-    Shininess: 180.0,
-    LightPosition: [0, 1, 0, 0],
-    LightIntensity: [0.8,0.8,0.8],
-  };
+  for (i = 0; i < models.length; i++) {
+    model = models[i];
+    model.geometry = obj.getModel(model.name);
+    var attribs = {
+      VertexPosition: model.geometry.position.array,
+      VertexNormal: model.geometry.normal.array,
+    }
+    model.material = obj.getMaterial(model.name);
+    model.bufferInfo = twgl.createBufferInfoFromArrays(gl, attribs);
+    model.vai = twgl.createVertexArrayInfo(gl, phongProgramInfo, model.bufferInfo);
+  }
 
-  // First let's make some variables
-  // to hold the translation,
-  var fieldOfViewRadians = degToRad(60);
-  var fRotationRadians = 0;
+
 
   drawScene();
 
-  function radToDeg(r) {
-    return r * 180 / Math.PI;
-  }
-
-  function degToRad(d) {
-    return d * Math.PI / 180;
-  }
 
   // Setup a ui.
-  webglLessonsUI.setupSlider("#fRotation", {value: radToDeg(fRotationRadians),
+  webglLessonsUI.setupSlider("#fRotation", {value: world.fRotationDegree,
    slide: updateRotation, min: -360, max: 360});
 
   function updateRotation(event, ui) {
-    fRotationRadians = degToRad(ui.value);
+    world.fRotationDegree = ui.value;
     drawScene();
   }
 
@@ -78,37 +138,28 @@ function main() {
     gl.enable(gl.DEPTH_TEST);
     gl.enable(gl.CULL_FACE);
 
-
-    // Compute the camera's matrix
-    var camera = [0.2, 0.25, .5];
-    var target = [0, 0.1, 0];
-    var up = [0, 1, 0];
-    var cameraMatrix = m4.lookAt(camera, target, up);
-    var viewMatrix = m4.inverse(cameraMatrix);
-
-    var aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
-    var zNear = 0.1;
-    var zFar = 20;
-    var projectionMatrix = m4.perspective(fieldOfViewRadians, aspect, zNear, zFar);
-
-    var modelMatrix = m4.rotationY(fRotationRadians);
-    var mvMatrix = m4.multiply(modelMatrix, viewMatrix);
-    var mvpMatrix = m4.multiply(mvMatrix, projectionMatrix);
-    var normalMatrix = m4.normalMatrix(mvMatrix);
-
-    uniforms.ModelViewMatrix = mvMatrix;
-    uniforms.NormalMatrix = normalMatrix;
-    uniforms.MVP = mvpMatrix;
-
     gl.useProgram(program);
-    twgl.setBuffersAndAttributes(gl, phongProgramInfo, bufferInfo);
-    twgl.setUniforms(phongProgramInfo, uniforms);
+
+    for (i = 0; i < models.length; i++) {
+      model = models[i];
+      gl.bindVertexArray(model.vai.vertexArrayObject);
+      var uniforms = computeUniforms(gl, world, model);
+      twgl.setUniforms(phongProgramInfo, uniforms);
+
+      var primitiveType = gl.TRIANGLES;
+      var offset = 0;
+      var count = model.geometry.position.count;
+      gl.drawArrays(primitiveType, offset, count);
+    }
+
+    //~ twgl.setBuffersAndAttributes(gl, phongProgramInfo, bufferInfo);
+
 
     // Draw the geometry.
-    var primitiveType = gl.TRIANGLES;
-    var offset = 0;
-    var count = bunnyGeometry.position.count;
-    gl.drawArrays(primitiveType, offset, count);
+    //~ var primitiveType = gl.TRIANGLES;
+    //~ var offset = 0;
+    //~ var count = model.geometry.position.count;
+    //~ gl.drawArrays(primitiveType, offset, count);
   }
 }
 
