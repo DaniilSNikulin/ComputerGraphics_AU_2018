@@ -21,10 +21,6 @@ function main() {
     return;
   }
 
-  var positionBuffer = gl.createBuffer();
-  var normalBuffer = gl.createBuffer();
-
-
   // setup GLSL programs
   const phongProgramInfo = twgl.createProgramInfo(gl, ["phong-v-shader", "phong-f-shader"]);
   const phong_program = phongProgramInfo.program;
