@@ -114,7 +114,7 @@
           }
         }
       }
-      amountInLight /= 9.0;
+      amountInLight = min((amountInLight / 9.0) + 0.15, 1.0);
 
       FragColor = vec4(diffAndSpec() * amountInLight + ambient(), 1.0);
     }
