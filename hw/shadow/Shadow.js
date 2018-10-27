@@ -74,8 +74,6 @@ function main() {
   for (i = 0; i < models.length; i++) {
     updateModel(gl, models[i]);
   }
-  bunnyModel = models[0];
-  floorModel = models[1];
 
 
   // Link our light and camera shader programs
