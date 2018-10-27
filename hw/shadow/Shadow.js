@@ -86,10 +86,6 @@ function main() {
   gl.useProgram(cameraShaderProgram)
   var samplerUniform = gl.getUniformLocation(cameraShaderProgram, 'depthColorTexture')
 
-  gl.activeTexture(gl.TEXTURE0)
-  gl.bindTexture(gl.TEXTURE_2D, shadowFramebuffer.texture)
-  gl.uniform1i(samplerUniform, 0)
-
 
   // Draw our dragon onto the shadow map
   function drawShadowMap () {
