@@ -32,15 +32,14 @@
 
 
   function getChairInitModelMatrix() {
-    var scale = 0.003;
+    var scale = 0.005;
     var scaleMatrix = twgl.m4.scaling([scale, scale, scale]);
     var initRotationMatrix = twgl.m4.rotationX(-90 * Math.PI / 180);
     return twgl.m4.multiply(scaleMatrix, initRotationMatrix);
   }
   function getBunnyInitModelMatrix() {
     var scale = 3;
-    const scaleMatrix = twgl.m4.scaling([scale, scale, scale]);
-    return twgl.m4.translate(scaleMatrix, [0, -0.03, 0])
+    return twgl.m4.scaling([scale, scale, scale]);
   }
   function getPlaneInitModelMatrix() {
     return twgl.m4.identity();
@@ -64,14 +63,14 @@
     return {
       diffuse:  [0.8, 0.3, 0.1],
       ambient:  [0.3, 0.1, 0.05],
-      specular: [0.5, 0.2, 0.05],
-      shininess: 180,
+      specular: [1.0, 0.4, 0.3],
+      shininess: 10,
     };
   }
   function getBunnyMaterial() {
     return {
       diffuse:  [0.5, 0.8, 0.5],
-      ambient:  [0.1, 0.1, 0.1],
+      ambient:  [0.05, 0.08, 0.05],
       specular: [0.9, 0.3, 0.9],
       shininess: 180,
     };

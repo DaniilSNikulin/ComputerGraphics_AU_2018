@@ -25,26 +25,38 @@
 
     out vec3 Position;
     out vec3 Normal;
+    out vec4 ShadowPosition;
 
     uniform mat4 ModelViewMatrix;
     uniform mat3 NormalMatrix;
     uniform mat4 MVP;
 
+    uniform mat4 lightMVP;
+
+    // Used to normalize our coordinates from clip space to (0 - 1)
+    // so that we can access the corresponding point in our depth color texture
+    const mat4 texUnitConverter = mat4(0.5, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.5, 0.5, 0.5, 1.0);
+
     void main() {
         Normal = normalize( NormalMatrix * VertexNormal);
         Position = vec3( ModelViewMatrix * vec4(VertexPosition,1.0) );
+        ShadowPosition = texUnitConverter * lightMVP * vec4(VertexPosition,1.0);
         gl_Position = MVP * vec4(VertexPosition,1.0);
     }
     </script>
 
     <script id="phong-f-shader" type="x-shader/x-fragment">#version 300 es
-    precision mediump float;
+    precision highp float;
 
     in vec3 Position;
     in vec3 Normal;
+    in vec4 ShadowPosition;
 
-    uniform vec4 LightPosition;
+    uniform sampler2D depthColorTexture;
+    uniform vec3 LightPosition;
     uniform vec3 LightIntensity;
+    uniform float shadowDepthTextureSize;
+
 
     uniform vec3 Kd;            // Diffuse reflectivity
     uniform vec3 Ka;            // Ambient reflectivity
@@ -53,10 +65,20 @@
 
     out vec4 FragColor;
 
-    vec3 ads( )
+    float decodeFloat (vec4 color) {
+      const vec4 bitShift = vec4(
+        1.0 / (256.0 * 256.0 * 256.0),
+        1.0 / (256.0 * 256.0),
+        1.0 / 256.0,
+        1
+      );
+      return dot(color, bitShift);
+    }
+
+    vec3 diffAndSpec( )
     {
         vec3 n = normalize(Normal);
-        vec3 s = normalize( vec3(LightPosition) - Position );
+        vec3 s = normalize( LightPosition - Position );
         vec3 v = normalize(vec3(-Position));
         vec3 r = reflect( -s, n );
 
@@ -66,12 +88,78 @@
               Ks * pow( max( dot(r,v), 0.0 ), Shininess ) );
     }
 
+    vec3 ambient() {
+      return LightIntensity * Ka;
+    }
+
     void main() {
-        FragColor = vec4(ads(), 1.0);
+      vec3 fragmentDepth = ShadowPosition.xyz;
+      float shadowAcneRemover = 0.01;
+      fragmentDepth.z -= shadowAcneRemover;
+      float texelSize = 1.0 / shadowDepthTextureSize;
+      float amountInLight = 0.0;
+
+      // Check whether or not the current fragment and the 8 fragments surrounding
+      // the current fragment are in the shadow. We then average out whether or not
+      // all of these fragments are in the shadow to determine the shadow contribution
+      // of the current fragment.
+      // So if 4 out of 9 fragments that we check are in the shadow then we'll say that
+      // this fragment is 4/9ths in the shadow so it'll be a little brighter than something
+      // that is 9/9ths in the shadow.
+      for (int x = -1; x <= 1; x++) {
+        for (int y = -1; y <= 1; y++) {
+          float texelDepth = decodeFloat(texture(depthColorTexture, fragmentDepth.xy + vec2(x, y) * texelSize));
+          if (fragmentDepth.z < texelDepth) {
+            amountInLight += 1.0;
+          }
+        }
+      }
+      amountInLight /= 9.0;
+
+      FragColor = vec4(diffAndSpec() * amountInLight + ambient(), 1.0);
     }
     </script>
 
 
+
+
+    <!-- shadow shaders -->
+    <script id="shadow-vs" type="x-shader/x-vertex">
+    attribute vec3 VertexPosition;
+    attribute vec3 VertexNormal;
+    uniform mat4 MVP;
+    void main() {
+      gl_Position = MVP * vec4(VertexPosition,1.0);
+    }
+    </script>
+
+    <script id="shadow-fs" type="x-shader/x-fragment">
+    precision highp float;
+    vec4 encodeFloat (float depth) {
+      const vec4 bitShift = vec4(
+        256 * 256 * 256,
+        256 * 256,
+        256,
+        1.0
+      );
+      const vec4 bitMask = vec4(
+        0,
+        1.0 / 256.0,
+        1.0 / 256.0,
+        1.0 / 256.0
+      );
+      vec4 comp = fract(depth * bitShift);
+      comp -= comp.xxyz * bitMask;
+      return comp;
+    }
+    void main (void) {
+      // Encode the distance into the scene of this fragment.
+      // We'll later decode this when rendering from our camera's
+      // perspective and use this number to know whether the fragment
+      // that our camera is seeing is inside of our outside of the shadow
+      gl_FragColor = encodeFloat(gl_FragCoord.z);
+    }
+    </script>
 
 
     <!-- Three.js library -->

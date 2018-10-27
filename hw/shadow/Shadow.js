@@ -1,25 +1,3 @@
-// WebGL - 2D Geometry Matrix Transform with Projection
-// from https://webglfundamentals.org/webgl/webgl-2d-geometry-matrix-transform-with-projection.html
-
-  // "use strict";
-
-world = {
-  look: {
-    camera: [1.1, 1.15, 0.],
-    target: [0, 0.2, 0],
-    up: [0, 1, 0],
-  },
-  projection: {
-    zNear: 0.1,
-    zFar: 20,
-  },
-  light: {
-    position: [0, 1, 0, 0],
-    intensity: [0.8,0.8,0.8],
-  },
-  fieldOfViewDegree: 60,
-  fRotationDegree: 0,
-};
 
 
 function radToDeg(r) {
@@ -30,47 +8,99 @@ function degToRad(d) {
 }
 
 
-function computeUniforms(gl, world, model) {
-  m4 = twgl.m4;
-  var aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
-  var projectionMatrix = m4.perspective(degToRad(world.fieldOfViewDegree), aspect, world.projection.zNear, world.projection.zFar);
-  var viewMatrix = m4.inverse(m4.lookAt(world.look.camera, world.look.target, world.look.up));
+world = {
+  gui : {
+    canvasIsPressed: false,
+    xRotation: Math.PI / 20,
+    yRotation: 0,
+    lastPressX: 0,
+    lastPressY: 0,
+  },
+  look: {
+    initPosition: [0, 5, 25],
+    target: [0, 0.2, 0],
+    up: [0, 1, 0],
+    computeViewMatrix: computeCameraViewMatrix,
+  },
+  projection: {
+    fieldOfViewRadians: degToRad(60),
+    aspect: 1,
+    zNear: 0.01,
+    zFar: 100,
+    ProjectionMatrix: undefined,
+  },
+  light: {
+    position: [0, 10, -15],
+    intensity: [0.8,0.8,0.8],
+    offscreen_width: 2048,
+    offscreen_height: 2048,
+    ProjectionMatrix: undefined,
+    ViewMatrix: undefined,
+  },
+  fRotation: 0,
+};
 
-  var initModelMatrix = obj.getInitModelMatrix(model.name);
-  var translateMatrix = m4.translation(model.center);
-  var rotateMatrix = model.needRotate ? m4.rotationY(degToRad(world.fRotationDegree)) : m4.identity();
-  var modelMatrix = m4.multiply(m4.multiply(initModelMatrix, rotateMatrix), translateMatrix);
+
+
+function computeUniforms(gl, model) {
+  m4 = twgl.m4;
+
+  var projectionMatrix = world.projection.ProjectionMatrix;
+  var viewMatrix = world.look.computeViewMatrix();
+
+  var lightProjectionMatrix = world.light.ProjectionMatrix;
+  var lightViewMatrix = world.light.ViewMatrix;
+
+  var initModelMatrix = model.initModelMatrix;
+  var translationMatrix = m4.translation(model.center);
+  var rotationMatrix = model.needRotate ? m4.rotationY(world.fRotation) : m4.identity();
+  var modelMatrix = m4.multiply(initModelMatrix, m4.multiply(rotationMatrix, translationMatrix));
 
   var mvMatrix = m4.multiply(modelMatrix, viewMatrix);
   var mvpMatrix = m4.multiply(mvMatrix, projectionMatrix);
   var normalMatrix = m4.normalMatrix(mvMatrix);
+
+  var lightMV = m4.multiply(modelMatrix, lightViewMatrix);
+  var lightMVP = m4.multiply(lightMV, lightProjectionMatrix);
+
+  var shadowDepthTextureSize = (world.light.offscreen_width + world.light.offscreen_height) / 2.0;
 
   return {
     Kd: model.material.diffuse,
     Ka: model.material.ambient,
     Ks: model.material.specular,
     Shininess: model.material.shininess,
+
     LightPosition: world.light.position,
     LightIntensity: world.light.intensity,
+    LightProjectionMatrix: lightProjectionMatrix,
+    LightViewMatrix: lightViewMatrix,
+    LightModelViewMatrix: lightMV,
+    LightModelViewProjectionMatrix: lightMVP,
+
+    ProjectionMatrix: projectionMatrix,
+    ViewMatrix: viewMatrix,
+    ModelMatrix: modelMatrix,
     ModelViewMatrix: mvMatrix,
+    ModelViewProjectionMatrix: mvpMatrix,
     NormalMatrix: normalMatrix,
-    MVP: mvpMatrix,
+
+    shadowDepthTextureSize: shadowDepthTextureSize,
   };
 }
 
 
-function computeModel(name, center) {
-  var model = obj.getModel(name);
-  var attribs = {
-    VertexPosition: model.position.array,
-    VertexNormal: model.normal.array,
+function updateModel(gl, model) {
+  m = model;
+  m.geometry = obj.getModel(m.name);
+  var arrays = {
+    VertexPosition: m.geometry.position.array,
+    VertexNormal: m.geometry.normal.array,
   }
-  return {
-    name: name,
-    model: model,
-    center: center,
-    attribs: attribs,
-  };
+  m.material = obj.getMaterial(m.name);
+  m.bufferInfo = twgl.createBufferInfoFromArrays(gl, arrays);
+  var scaleMatrix = twgl.m4.scaling([m.scale, m.scale, m.scale]);
+  m.initModelMatrix = twgl.m4.multiply(scaleMatrix, obj.getInitModelMatrix(model.name));
 }
 
 
@@ -78,91 +108,241 @@ function main() {
   // Get A WebGL context
   /** @type {HTMLCanvasElement} */
   m4 = twgl.m4;
-  var canvas = document.getElementById('comp_graphics_hw');
-
-  var models = [
-    { name: 'chair', center: [0, 0,  0.5], needRotate: true, },
-    { name: 'bunny', center: [0, 0, -0.5], needRotate: true, },
-    { name: 'plane', center: [0, -0.2, 0], needRotate: false,},
-  ]
-
+  var canvas = initCanvas('comp_graphics_hw');
 
   var gl = canvas.getContext("webgl2");
   if (!gl) {
     alert('Your browser does not support WebGL');
     return;
   }
+  gl.enable(gl.DEPTH_TEST);
 
-  // setup GLSL programs
-  const phongProgramInfo = twgl.createProgramInfo(gl, ["phong-v-shader", "phong-f-shader"]);
-  const phong_program = phongProgramInfo.program;
-  var program = phong_program;
+  twgl.resizeCanvasToDisplaySize(gl.canvas);
+  world.projection.aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+  canvas.width = gl.canvas.width;
+  canvas.height = gl.canvas.height;
 
+  world.projection.ProjectionMatrix = m4.perspective(world.projection.fieldOfViewRadians, world.projection.aspect, world.projection.zNear, world.projection.zFar);
+  world.light.ProjectionMatrix = m4.ortho(-40, 40, -40, 40, -40.0, 80);
+  world.light.ViewMatrix = m4.inverse(m4.lookAt(world.light.position, world.look.target, world.look.target));
 
+  var models = [
+    { name: 'bunny', center: [0, 0, -5], scale: 15, needRotate: true, },
+    { name: 'plane', center: [0, -1, 0], scale: 30, needRotate: false,},
+    { name: 'chair', center: [3, 1,  5], scale: 10, needRotate: true, },
+  ];
   for (i = 0; i < models.length; i++) {
-    model = models[i];
-    model.geometry = obj.getModel(model.name);
-    var attribs = {
-      VertexPosition: model.geometry.position.array,
-      VertexNormal: model.geometry.normal.array,
+    updateModel(gl, models[i]);
+  }
+  bunnyModel = models[0];
+  floorModel = models[1];
+
+
+  // Link our light and camera shader programs
+  const cameraShaderProgramInfo = twgl.createProgramInfo(gl, ["phong-v-shader", "phong-f-shader"]);
+  const lightShaderProgramInfo = twgl.createProgramInfo(gl, ["shadow-vs", "shadow-fs"]);
+  var cameraShaderProgram = cameraShaderProgramInfo.program;
+  var lightShaderProgram = lightShaderProgramInfo.program;
+
+
+  //~ var cameraShaderProgram = twgl.createProgramFromSources(gl, [cameraVertexGLSL, cameraFragmentGLSL]);
+  //~ var lightShaderProgram = twgl.createProgramFromSources(gl, [lightVertexGLSL, lightFragmentGLSL]);
+  //~ var cameraShaderProgramInfo = twgl.createProgramInfoFromProgram(gl, cameraShaderProgram);
+  //~ var lightShaderProgramInfo = twgl.createProgramInfoFromProgram(gl, lightShaderProgram);
+
+  gl.useProgram(lightShaderProgram);
+  var shadowFramebuffer = initFramebufferObject(gl);
+
+
+  gl.useProgram(cameraShaderProgram)
+  var samplerUniform = gl.getUniformLocation(cameraShaderProgram, 'depthColorTexture')
+
+  gl.activeTexture(gl.TEXTURE0)
+  gl.bindTexture(gl.TEXTURE_2D, shadowFramebuffer.texture)
+  gl.uniform1i(samplerUniform, 0)
+
+
+  lightViewMatrix = world.light.ViewMatrix;
+  lightProjectionMatrix = world.light.ProjectionMatrix;
+  uniforms = computeUniforms(gl, bunnyModel);
+  var cameraUniforms = cameraUniformEject(uniforms);
+
+
+  // Draw our dragon onto the shadow map
+  function drawShadowMap () {
+    // We rotate models about the y axis every frame
+    world.fRotation += 0.01
+
+    gl.useProgram(lightShaderProgram)
+
+    // Draw to our off screen drawing buffer
+    gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFramebuffer)
+
+    // Set the viewport to our shadow texture's size
+    gl.viewport(0, 0, world.light.offscreen_width, world.light.offscreen_height)
+    gl.clearColor(0, 0, 0, 1)
+    gl.clearDepth(1.0)
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+
+
+    for (i  = 0; i < models.length; i++) {
+      model = models[i];
+      uniforms = computeUniforms(gl, model);
+      twgl.setUniforms(lightShaderProgramInfo, {
+        MVP: uniforms.LightModelViewProjectionMatrix,
+      });
+      twgl.setBuffersAndAttributes(gl, lightShaderProgramInfo, model.bufferInfo);
+      gl.drawArrays(gl.TRIANGLES, 0, model.geometry.position.count);
     }
-    model.material = obj.getMaterial(model.name);
-    model.bufferInfo = twgl.createBufferInfoFromArrays(gl, attribs);
-    model.vai = twgl.createVertexArrayInfo(gl, phongProgramInfo, model.bufferInfo);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
   }
 
 
+  // Draw our dragon and floor onto the scene
+  function drawModels () {
+    gl.useProgram(cameraShaderProgram)
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height)
+    gl.clearColor(0.98, 0.98, 0.98, 1)
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
-  drawScene();
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, shadowFramebuffer.texture)
+    gl.uniform1i(samplerUniform, 0)
 
-
-  // Setup a ui.
-  webglLessonsUI.setupSlider("#fRotation", {value: world.fRotationDegree,
-   slide: updateRotation, min: -360, max: 360});
-
-  function updateRotation(event, ui) {
-    world.fRotationDegree = ui.value;
-    drawScene();
-  }
-
-
-  // Draw the scene.
-  function drawScene() {
-    twgl.resizeCanvasToDisplaySize(gl.canvas);
-    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-
-    // Clear the canvas AND the depth buffer.
-    gl.clearColor(1, 1, 1, 1);   // clear to white
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-    gl.enable(gl.DEPTH_TEST);
-    gl.enable(gl.CULL_FACE);
-
-    gl.useProgram(program);
-
+    // Create our camera view matrix
     for (i = 0; i < models.length; i++) {
       model = models[i];
-      gl.bindVertexArray(model.vai.vertexArrayObject);
-      var uniforms = computeUniforms(gl, world, model);
-      twgl.setUniforms(phongProgramInfo, uniforms);
-
-      var primitiveType = gl.TRIANGLES;
-      var offset = 0;
-      var count = model.geometry.position.count;
-      gl.drawArrays(primitiveType, offset, count);
+      cameraUniforms = cameraUniformEject(computeUniforms(gl, model));
+      twgl.setUniforms(cameraShaderProgramInfo, cameraUniforms);
+      twgl.setBuffersAndAttributes(gl, cameraShaderProgramInfo, model.bufferInfo);
+      gl.drawArrays(gl.TRIANGLES, 0, model.geometry.position.count);
     }
-
-    //~ twgl.setBuffersAndAttributes(gl, phongProgramInfo, bufferInfo);
-
-
-    // Draw the geometry.
-    //~ var primitiveType = gl.TRIANGLES;
-    //~ var offset = 0;
-    //~ var count = model.geometry.position.count;
-    //~ gl.drawArrays(primitiveType, offset, count);
   }
+
+  // Draw our shadow map and light map every request animation frame
+  function draw () {
+    drawShadowMap()
+    drawModels()
+
+    window.requestAnimationFrame(draw)
+  }
+  draw()
 }
 
 
-
 main();
+
+
+function computeCameraViewMatrix() {
+  var camera = m4.identity()
+  m4.translate(camera, world.look.initPosition, camera)
+  var xRotMatrix = m4.identity()
+  var yRotMatrix = m4.identity()
+  m4.rotateX(xRotMatrix, -world.gui.xRotation, xRotMatrix)
+  m4.rotateY(yRotMatrix, world.gui.yRotation, yRotMatrix)
+  m4.multiply(camera, xRotMatrix, camera)
+  m4.multiply(camera, yRotMatrix, camera)
+  camera = m4.inverse(m4.lookAt([camera[12], camera[13], camera[14]], world.look.target, world.look.target))
+  return camera;
+}
+
+
+function initFramebufferObject(gl) {
+  var shadowDepthTexture, depthRenderBuffer;
+  var shadowFramebuffer = gl.createFramebuffer()
+  gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFramebuffer)
+
+  // This section is the meat of things. We create an off screen frame buffer that we'll render
+  // our scene onto from our light's viewpoint. We output that to a color texture `shadowDepthTexture`.
+  // Then later our camera shader will use `shadowDepthTexture` to determine whether or not fragments
+  // are in the shadow.
+  shadowDepthTexture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, shadowDepthTexture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, world.light.offscreen_width, world.light.offscreen_height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+  depthRenderBuffer = gl.createRenderbuffer();
+  gl.bindRenderbuffer(gl.RENDERBUFFER, depthRenderBuffer);
+  gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, world.light.offscreen_width, world.light.offscreen_height);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFramebuffer);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, shadowDepthTexture, 0);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthRenderBuffer);
+
+  shadowFramebuffer.texture = shadowDepthTexture;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+  gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+  return shadowFramebuffer;
+}
+
+
+function initCanvas(canvasName) {
+  var canvas = document.getElementById(canvasName);
+
+  // We set up controls so that we can drag our mouse or finger to adjust the rotation of
+  // the camera about the X and Y axes
+  canvas.onmousedown = function (e) {
+    world.gui.canvasIsPressed = true
+    world.gui.lastPressX = e.pageX
+    world.gui.lastPressY = e.pageY
+  }
+  canvas.onmouseup = function () {
+    world.gui.canvasIsPressed = false
+  }
+  canvas.onmouseout = function () {
+    world.gui.canvasIsPressed = false
+  }
+  canvas.onmousemove = function (e) {
+    if (world.gui.canvasIsPressed) {
+      world.gui.xRotation += (e.pageY - world.gui.lastPressY) / 50
+      world.gui.yRotation -= (e.pageX - world.gui.lastPressX) / 50
+
+      world.gui.xRotation = Math.min(world.gui.xRotation, Math.PI / 2.5)
+      world.gui.xRotation = Math.max(world.gui.xRotation, 0.1)
+
+      world.gui.lastPressX = e.pageX
+      world.gui.lastPressY = e.pageY
+    }
+  }
+
+  // As you drag your finger we move the camera
+  canvas.addEventListener('touchstart', function (e) {
+    world.gui.lastPressX = e.touches[0].clientX
+    world.gui.lastPressY = e.touches[0].clientY
+  });
+  canvas.addEventListener('touchmove', function (e) {
+    e.preventDefault()
+    world.gui.xRotation += (e.touches[0].clientY - world.gui.lastPressY) / 50
+    world.gui.yRotation -= (e.touches[0].clientX - world.gui.lastPressX) / 50
+
+    world.gui.xRotation = Math.min(world.gui.xRotation, Math.PI / 2.5)
+    world.gui.xRotation = Math.max(world.gui.xRotation, 0.1)
+
+    world.gui.lastPressX = e.touches[0].clientX
+    world.gui.lastPressY = e.touches[0].clientY
+  });
+
+  return canvas;
+}
+
+
+function cameraUniformEject(uniforms) {
+  return {
+    ModelViewMatrix: uniforms.ModelViewMatrix,
+    MVP: uniforms.ModelViewProjectionMatrix,
+    NormalMatrix: uniforms.NormalMatrix,
+    lightMVP: uniforms.LightModelViewProjectionMatrix,
+    LightPosition: uniforms.LightPosition,
+    LightIntensity: uniforms.LightIntensity,
+    Kd: uniforms.Kd,
+    Ka: uniforms.Ka,
+    Ks: uniforms.Ks,
+    Shininess: uniforms.Shininess,
+    shadowDepthTextureSize: uniforms.shadowDepthTextureSize,
+  };
+}
