@@ -45,8 +45,6 @@ world = {
 
 
 function main() {
-  // Get A WebGL context
-  /** @type {HTMLCanvasElement} */
   m4 = twgl.m4;
   var canvas = initCanvas('comp_graphics_hw');
 
@@ -74,7 +72,6 @@ function main() {
   for (i = 0; i < models.length; i++) {
     updateModel(gl, models[i]);
   }
-
 
   // Link our light and camera shader programs
   const cameraShaderProgramInfo = twgl.createProgramInfo(gl, ["phong-v-shader", "phong-f-shader"]);
