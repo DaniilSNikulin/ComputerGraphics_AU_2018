@@ -83,7 +83,7 @@
         vec3 r = reflect( -s, n );
 
         return
-            LightIntensity * ( Ka +
+            LightIntensity * (
               Kd * max( dot(s, n), 0.0 ) +
               Ks * pow( max( dot(r,v), 0.0 ), Shininess ) );
     }
